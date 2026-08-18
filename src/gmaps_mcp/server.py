@@ -6,15 +6,18 @@ Uses the official MCP Python SDK (MCPServer) with stdio and Streamable HTTP supp
 import argparse
 import logging
 import sys
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 from pydantic import Field
 
 from gmaps_mcp.schemas import (
     GetPlaceDetailsResult,
+    ResultDelivery,
     SearchGoogleMapsResult,
 )
+from gmaps_mcp.storage import result_store
 from gmaps_mcp.tools import (
     get_place_details,
     search_google_maps,
@@ -86,13 +89,42 @@ async def search_google_maps_tool(
             ),
         ),
     ] = "en",
+    result_delivery: Annotated[
+        Literal["inline", "resource"],
+        Field(
+            default="inline",
+            description=(
+                "Delivery method for search results:\n"
+                "- 'inline': Return all structured place results directly inside the tool response (default).\n"
+                "- 'resource': Store full results server-side in an MCP resource and return an MCP resource_link URI "
+                "(e.g. 'gmaps://results/{resource_id}'), preventing LLM context window bloat for large result sets."
+            ),
+        ),
+    ] = "inline",
 ) -> SearchGoogleMapsResult:
     return await search_google_maps(
         query=query,
         limit=limit,
         country=country,
         language=language,
+        result_delivery=result_delivery,
     )
+
+
+# Register MCP Resources for stored search results
+@server.resource(
+    "gmaps://results/{resource_id}",
+    name="stored_search_results",
+    title="Stored Google Maps Search Results",
+    description="Retrieve complete stored Google Maps search results JSON by resource ID.",
+    mime_type="application/json",
+)
+def get_stored_search_results(resource_id: str) -> str:
+    """Retrieve complete stored search results by resource ID."""
+    result = result_store.get(resource_id)
+    if result is None:
+        raise ResourceNotFoundError(f"No stored Google Maps results found for resource ID: {resource_id}")
+    return result.model_dump_json(indent=2)
 
 
 @server.tool(

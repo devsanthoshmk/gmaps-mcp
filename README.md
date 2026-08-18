@@ -172,16 +172,18 @@ Search Google Maps for businesses, attractions, services, and landmarks.
 |---|---|---|---|
 | `query` | `string` | *(required)* | Search term (e.g. `"coffee in Koramangala Bangalore"`, `"dentists near Connaught Place Delhi"`, `"Italian restaurants in New York"`). |
 | `limit` | `integer` | `None` *(optional)* | Maximum number of results to return. If omitted or `null`, fetches as many results as possible across all pages. |
+| `result_delivery` | `string` | `"inline"` | Delivery mode: `"inline"` returns all places directly in the tool response (default), `"resource"` stores the complete results server-side in an MCP resource and returns a `resource_link` URI to eliminate LLM context bloat. |
 | `country` | `string` | `"in"` | Two-letter ISO country code for region localization (e.g. `"in"`, `"us"`, `"gb"`, `"de"`, `"fr"`, `"ae"`). |
 | `language` | `string` | `"en"` | Language code for results (e.g. `"en"`, `"hi"`, `"es"`, `"fr"`). |
 
-#### Output Structure
+#### Output Structure (Inline Delivery)
 ```json
 {
   "query": "coffee in Koramangala Bangalore",
   "country": "in",
   "language": "en",
   "total_results": 2,
+  "delivery_mode": "inline",
   "places": [
     {
       "place_id": "ChIJ80IECk8UrjsRqCffDjE09lw",
@@ -201,6 +203,25 @@ Search Google Maps for businesses, attractions, services, and landmarks.
   ]
 }
 ```
+
+#### Output Structure (Resource Delivery)
+When `result_delivery="resource"`, results are stored in an MCP resource and the tool response returns a lightweight link:
+```json
+{
+  "query": "dentists in Delhi",
+  "country": "in",
+  "language": "en",
+  "total_results": 50,
+  "delivery_mode": "resource",
+  "resource_link": "gmaps://results/search_a1b2c3d4e5f6",
+  "resource_id": "search_a1b2c3d4e5f6",
+  "summary": "Successfully retrieved 50 places. Results are stored in MCP resource 'gmaps://results/search_a1b2c3d4e5f6' to conserve context. Retrieve full place data using the MCP Resource API.",
+  "places": []
+}
+```
+
+#### Reading Stored Results via MCP Resource API
+AI agents and clients can retrieve the complete structured JSON at any time via the MCP `resources/read` endpoint using the `resource_link` (e.g. `gmaps://results/{resource_id}`). The server stores results in memory without exposing local filesystem paths, ensuring identical behavior across `stdio`, `sse`, and `streamable-http` transports.
 
 ---
 
