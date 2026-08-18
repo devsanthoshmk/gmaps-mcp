@@ -342,26 +342,79 @@ def _extract_places_from_html(html: str, query: str, country: str = "in") -> Lis
     return places
 
 
+def _extract_search_term(query: str) -> Tuple[str, Optional[str]]:
+    """Extract (base_search_term, location_hint) from natural language query.
+
+    Examples:
+        "gift shop in chennai" -> ("gift shop", "chennai")
+        "dentists in chicago" -> ("dentists", "chicago")
+        "coffee near eiffel tower" -> ("coffee", "eiffel tower")
+        "pharmacies at t nagar" -> ("pharmacies", "t nagar")
+        "restaurants" -> ("restaurants", None)
+    """
+    pattern = r'^(.*?)\s+(?:in|near|around|at|within)\s+(.+)$'
+    match = re.match(pattern, query.strip(), flags=re.IGNORECASE)
+    if match:
+        term = match.group(1).strip()
+        loc = match.group(2).strip()
+        if term and loc:
+            return term, loc
+    return query.strip(), None
+
+
+def _build_viewport_tile_url(
+    base_search_url: str,
+    base_decoded_pb: str,
+    term: str,
+    lat: float,
+    lng: float,
+    span_meters: float,
+    start: int = 0,
+    page_idx: int = 1,
+) -> str:
+    """Inject sub-viewport geographic constraints and pagination into a valid session search URL."""
+    vp_clause = f"!4m8!1m3!1d{span_meters:.1f}!2d{lng:.7f}!3d{lat:.7f}!3m2!1i1024!2i768!4f13.1"
+    tile_pb = re.sub(r'^!1s[^!]+', f"!1s{quote(term)}{vp_clause}", base_decoded_pb)
+
+    if start > 0:
+        if "!8i" in tile_pb:
+            tile_pb = re.sub(r'(!8i)\d+', f'!8i{start}', tile_pb)
+        elif "!7i" in tile_pb:
+            tile_pb = re.sub(r'(!7i\d+)', rf'\1!8i{start}', tile_pb)
+        else:
+            tile_pb = f"{tile_pb}!8i{start}"
+
+    tile_url = re.sub(r'pb=[^&]+', f"pb={quote(tile_pb)}", base_search_url)
+    tile_url = re.sub(r'q=[^&]+', f"q={quote(term)}", tile_url)
+    if start > 0:
+        tile_url = f"{tile_url}&start={start}&ech={page_idx}"
+    return tile_url
+
+
 def _generate_geo_grid(
     center_lat: float,
     center_lng: float,
     span_meters: float,
-    grid_size: int = 3,
+    grid_size: int,
 ) -> List[Tuple[float, float, float]]:
-    """Dynamically divides any location on Earth into an NxN sub-viewport coordinate matrix."""
+    """Dynamically divides any location on Earth into an NxN sub-viewport coordinate matrix without gaps."""
+    if grid_size <= 0:
+        return []
+
     lat_deg_span = span_meters / 111000.0
     lng_deg_span = span_meters / (111000.0 * max(0.01, math.cos(math.radians(center_lat))))
 
-    half_grid = (grid_size - 1) / 2.0
+    cell_lat_deg = lat_deg_span / grid_size
+    cell_lng_deg = lng_deg_span / grid_size
     cell_span = span_meters / grid_size
+
+    half_grid = (grid_size - 1) / 2.0
 
     grid = []
     for r in range(grid_size):
         for c in range(grid_size):
-            offset_r = (r - half_grid) / max(1, half_grid) if half_grid > 0 else 0
-            offset_c = (c - half_grid) / max(1, half_grid) if half_grid > 0 else 0
-            lat = center_lat + offset_r * (lat_deg_span / 2.0)
-            lng = center_lng + offset_c * (lng_deg_span / 2.0)
+            lat = center_lat + (r - half_grid) * cell_lat_deg
+            lng = center_lng + (c - half_grid) * cell_lng_deg
             grid.append((lat, lng, cell_span))
     return grid
 
@@ -424,22 +477,35 @@ async def _fetch_results_page(
     """
     if start == 0:
         url = search_url
+        logger.info("[%s] Fetching initial results page (start=0)", query)
     else:
         # Google Maps protobuf pagination uses !7i{page_size}!8i{start}
         url = search_url
         if "!8i" in url:
             url = re.sub(r'(!8i)\d+', f'!8i{start}', url)
+            method = "!8i (raw protobuf start offset)"
         elif "%218i" in url:
             url = re.sub(r'(%218i)\d+', f'%218i{start}', url)
+            method = "%218i (encoded protobuf start offset)"
         elif "!7i" in url:
             url = re.sub(r'(!7i\d+)', rf'\1!8i{start}', url)
+            method = "!7i (injected !8i after page size)"
         elif "%217i" in url:
             url = re.sub(r'(%217i\d+)', rf'\1%218i{start}', url)
+            method = "%217i (injected %218i after encoded page size)"
         else:
             url = f"{url}&start={start}"
+            method = "fallback &start= query param"
 
         page_num = (start // 20) + 1
         url = f"{url}&start={start}&ech={page_num}"
+        logger.info(
+            "[%s] Fetching pagination results (page=%d, start=%d, method=%s)",
+            query,
+            page_num,
+            start,
+            method,
+        )
 
     try:
         async with session.get(
@@ -489,21 +555,25 @@ async def search_google_maps_async(
     country: str = "in",
     limit: Optional[int] = None,
     grid: bool = False,
-    grid_size: int = 3,
-    concurrency: int = 4,
+    grid_size: Optional[int] = None,
+    concurrency: int = 8,
     timeout: int = 20,
+    target_tile_meters: float = 5000.0,
+    max_grid_size: int = 10,
 ) -> List[Place]:
-    """Execute asynchronous Google Maps search with deep pagination and optional dynamic geospatial grid expansion.
+    """Execute asynchronous Google Maps search with deep pagination and coverage-first adaptive grid expansion.
 
     Args:
-        query: Search term (e.g., 'coffee in Paris', 'dentists in Chicago').
+        query: Search term (e.g., 'gift shop in chennai', 'dentists in chicago', 'coffee in Paris').
         lang: Language code for Google Maps (e.g., 'en', 'hi', 'fr', 'ja').
         country: ISO country code for Google Maps (e.g., 'in', 'us', 'fr', 'de').
         limit: Optional maximum number of place results to return. If None, fetches as many results as possible.
         grid: Whether to dynamically tile and search the detected geographic bounding box for massive result coverage.
-        grid_size: Dimension of the coordinate grid (e.g. 3 = 3x3 = 9 sub-viewports).
+        grid_size: Optional manual override for coordinate grid dimension (e.g. 4 = 4x4 = 16 sub-viewports). If None, calculated adaptively.
         concurrency: Semaphore concurrency limit when querying grid tiles.
         timeout: Request timeout in seconds.
+        target_tile_meters: Target width/height in meters for each sub-viewport tile (default: 5000.0 = ~5 km).
+        max_grid_size: Maximum grid dimension cap to limit excessive tiling (default: 10 = max 100 tiles).
 
     Returns:
         List of Place models.
@@ -511,7 +581,7 @@ async def search_google_maps_async(
     places: List[Place] = []
     seen_ids: set[str] = set()
 
-    connector = aiohttp.TCPConnector(ssl=True)
+    connector = aiohttp.TCPConnector(ssl=True, limit=concurrency * 2)
     async with aiohttp.ClientSession(connector=connector) as session:
         search_url, html_places, _ = await _get_search_url(session, query, lang, country, timeout=timeout)
         if not search_url:
@@ -525,14 +595,18 @@ async def search_google_maps_async(
             logger.warning("[%s] Could not obtain search URL, aborting search.", query)
             return []
 
+        # Extract base decoded protobuf template from search_url
+        pb_match = re.search(r'pb=([^&]+)', search_url)
+        decoded_pb = unquote(pb_match.group(1)) if pb_match else ""
+
         # 1. Primary sliding-window crawl on initial viewport
         page_size = 20
         start = 0
-        max_pages = max(1, (limit + page_size - 1) // page_size) if limit and limit > 0 else 100
+        max_pages = max(1, (limit + page_size - 1) // page_size) if limit and limit > 0 else 15
 
         detected_bounds = None
         consecutive_stagnant = 0
-        for _ in range(max_pages):
+        while True:
             page_places, bounds = await _fetch_results_page(
                 session, search_url, query, start=start, country=country, timeout=timeout
             )
@@ -567,12 +641,30 @@ async def search_google_maps_async(
 
             start += page_size
 
-        # 2. Dynamic Geospatial Viewport Grid Expansion (if grid=True or requested limit > scraped count)
-        should_grid_expand = grid or (limit and len(places) < limit and limit > 200)
+        # 2. Dynamic Geospatial Sub-Viewport Grid Expansion
+        # Automatically expands if grid=True OR limit is None (unlimited) OR requested limit exceeds primary crawl count
+        should_grid_expand = (grid or limit is None or (limit and len(places) < limit)) and detected_bounds and decoded_pb
         if should_grid_expand and detected_bounds:
             center_lat, center_lng, span_m = detected_bounds
-            if span_m >= 1000.0:  # Only grid-expand if area is larger than 1km
-                grid_tiles = _generate_geo_grid(center_lat, center_lng, span_m, grid_size=grid_size)
+            effective_grid_size = grid_size if grid_size is not None else min(
+                math.ceil(span_m / target_tile_meters),
+                max_grid_size,
+            )
+            effective_span = min(span_m, 80000.0) if span_m > 80000.0 else span_m
+            tile_span_km = (effective_span / effective_grid_size) / 1000.0 if effective_grid_size > 0 else 0.0
+            logger.info(
+                "[%s] span=%.1fkm target=%.1fkm grid=%dx%d tiles=%d tile_span=%.1fkm",
+                query,
+                span_m / 1000,
+                target_tile_meters / 1000,
+                effective_grid_size,
+                effective_grid_size,
+                effective_grid_size * effective_grid_size,
+                tile_span_km,
+            )
+            if effective_grid_size > 1:
+                base_term, _ = _extract_search_term(query)
+                grid_tiles = _generate_geo_grid(center_lat, center_lng, effective_span, grid_size=effective_grid_size)
                 logger.info(
                     "[%s] Auto-detected bounding box center=(%.4f, %.4f), span=%.0fm. Crawling %d sub-viewport grid tiles...",
                     query,
@@ -581,26 +673,49 @@ async def search_google_maps_async(
                     span_m,
                     len(grid_tiles),
                 )
-                encoded_query = quote(query)
                 sem = asyncio.Semaphore(concurrency)
 
-                async def _scrape_tile(lat: float, lng: float, cell_span: float):
+                async def _scrape_tile(tile_idx: int, lat: float, lng: float, cell_span: float) -> List[Place]:
+                    tile_places: List[Place] = []
                     async with sem:
-                        tile_places = []
-                        # Crawl up to 5 pages per tile
+                        logger.warning(
+                            "[%s] TILE %d START lat=%.6f lng=%.6f span=%.1fm",
+                            query,
+                            tile_idx,
+                            lat,
+                            lng,
+                            cell_span,
+                        )
+                        # Crawl up to 5 pages per sub-viewport tile
                         for p_idx in range(5):
                             t_start = p_idx * 20
-                            pb = f"!4m12!1m3!1d{cell_span:.1f}!2d{lng:.7f}!3d{lat:.7f}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!7i20!8i{t_start}!10b1"
-                            tile_url = f"https://www.google.com/search?tbm=map&authuser=0&hl={lang}&gl={country}&pb={pb}&q={encoded_query}"
-                            tp, _ = await _fetch_results_page(session, tile_url, query, start=t_start, country=country, timeout=timeout)
+                            tile_url = _build_viewport_tile_url(
+                                base_search_url=search_url,
+                                base_decoded_pb=decoded_pb,
+                                term=base_term,
+                                lat=lat,
+                                lng=lng,
+                                span_meters=cell_span,
+                                start=t_start,
+                                page_idx=p_idx + 1,
+                            )
+                            tp, _ = await _fetch_results_page(
+                                session, tile_url, base_term, start=t_start, country=country, timeout=timeout
+                            )
                             if not tp:
                                 break
                             tile_places.extend(tp)
                             if len(tp) < 20:
                                 break
-                        return tile_places
+                        logger.warning(
+                            "[%s] TILE %d DONE: %d places",
+                            query,
+                            tile_idx,
+                            len(tile_places),
+                        )
+                    return tile_places
 
-                tile_tasks = [_scrape_tile(lat, lng, cell_span) for lat, lng, cell_span in grid_tiles]
+                tile_tasks = [_scrape_tile(idx, lat, lng, cell_span) for idx, (lat, lng, cell_span) in enumerate(grid_tiles)]
                 tile_results = await asyncio.gather(*tile_tasks)
 
                 for batch in tile_results:
@@ -615,6 +730,7 @@ async def search_google_maps_async(
 
     logger.info("[%s] Search finished. Found %d unique place(s).", query, len(places))
     return places[:limit] if limit and limit > 0 else places
+
 
 
 async def get_place_details_async(
