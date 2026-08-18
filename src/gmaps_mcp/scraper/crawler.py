@@ -253,7 +253,7 @@ async def search_google_maps_async(
     query: str,
     lang: str = "en",
     country: str = "in",
-    limit: int = 10,
+    limit: Optional[int] = None,
     timeout: int = 20,
 ) -> List[Place]:
     """Execute asynchronous Google Maps search with pagination and deduplication.
@@ -262,7 +262,7 @@ async def search_google_maps_async(
         query: Search term (e.g., 'coffee in Koramangala Bangalore').
         lang: Language code for Google Maps (e.g., 'en', 'hi', 'es').
         country: ISO country code for Google Maps (e.g., 'in', 'us', 'uk').
-        limit: Maximum number of place results to return (1-50).
+        limit: Optional maximum number of place results to return. If None, fetches as many results as possible.
         timeout: Request timeout in seconds.
 
     Returns:
@@ -280,7 +280,8 @@ async def search_google_maps_async(
 
         page_size = 20
         start = 0
-        max_pages = max(1, (limit + page_size - 1) // page_size)
+        # If limit is specified and > 0, calculate max_pages; otherwise allow up to 50 pages (1000 items)
+        max_pages = max(1, (limit + page_size - 1) // page_size) if limit and limit > 0 else 50
 
         for _ in range(max_pages):
             page_places = await _fetch_results_page(
@@ -290,20 +291,26 @@ async def search_google_maps_async(
             if not page_places:
                 break
 
+            new_added = 0
             for place in page_places:
                 if place.place_id not in seen_ids:
                     seen_ids.add(place.place_id)
                     places.append(place)
-                    if len(places) >= limit:
+                    new_added += 1
+                    if limit and limit > 0 and len(places) >= limit:
                         break
 
-            if len(places) >= limit:
+            # If no new unique places were discovered on this page, stop paginating
+            if new_added == 0:
+                break
+
+            if limit and limit > 0 and len(places) >= limit:
                 break
 
             start += page_size
 
     logger.info("[%s] Search finished. Found %d place(s).", query, len(places))
-    return places[:limit]
+    return places[:limit] if limit and limit > 0 else places
 
 
 async def get_place_details_async(

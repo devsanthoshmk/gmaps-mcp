@@ -58,14 +58,13 @@ async def search_google_maps_tool(
         ),
     ],
     limit: Annotated[
-        int,
+        Optional[int],
         Field(
-            default=10,
+            default=None,
             ge=1,
-            le=50,
-            description="Maximum number of place results to return (between 1 and 50, default is 10).",
+            description="Optional maximum number of place results to return. If omitted or not provided, fetches as many results as possible across all available pages.",
         ),
-    ] = 10,
+    ] = None,
     country: Annotated[
         str,
         Field(

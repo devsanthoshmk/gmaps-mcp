@@ -5,19 +5,21 @@ for AI agents and LLM tool calling.
 """
 
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import Field
 
 from gmaps_mcp.schemas import (
     GetPlaceDetailsResult,
     Place,
+    ResultDelivery,
     SearchGoogleMapsResult,
 )
 from gmaps_mcp.scraper import (
     get_place_details_async,
     search_google_maps_async,
 )
+from gmaps_mcp.storage import result_store
 
 logger = logging.getLogger("gmaps_mcp.tools")
 
@@ -39,14 +41,13 @@ async def search_google_maps(
         ),
     ],
     limit: Annotated[
-        int,
+        Optional[int],
         Field(
-            default=10,
+            default=None,
             ge=1,
-            le=50,
-            description="Maximum number of place results to return (between 1 and 50, default is 10).",
+            description="Optional maximum number of place results to return. If omitted or not provided, fetches as many results as possible across all available pages.",
         ),
-    ] = 10,
+    ] = None,
     country: Annotated[
         str,
         Field(
@@ -68,6 +69,18 @@ async def search_google_maps(
             ),
         ),
     ] = "en",
+    result_delivery: Annotated[
+        Literal["inline", "resource"],
+        Field(
+            default="inline",
+            description=(
+                "Delivery method for search results:\n"
+                "- 'inline': Return all structured place results directly inside the tool response (default).\n"
+                "- 'resource': Store full results server-side in an MCP resource and return an MCP resource_link URI "
+                "(e.g. 'gmaps://results/{resource_id}'), preventing LLM context window bloat for large result sets."
+            ),
+        ),
+    ] = "inline",
 ) -> SearchGoogleMapsResult:
     """Search Google Maps for local businesses, places, points of interest, and services.
 
@@ -83,11 +96,12 @@ async def search_google_maps(
     - Ratings and review volume comparisons for businesses in any city or area.
     """
     logger.info(
-        "Tool call search_google_maps: query=%r, limit=%d, country=%r, language=%r",
+        "Tool call search_google_maps: query=%r, limit=%r, country=%r, language=%r, result_delivery=%r",
         query,
         limit,
         country,
         language,
+        result_delivery,
     )
 
     places = await search_google_maps_async(
@@ -97,11 +111,39 @@ async def search_google_maps(
         limit=limit,
     )
 
+    if result_delivery == "resource":
+        full_result = SearchGoogleMapsResult(
+            query=query,
+            country=country,
+            language=language,
+            total_results=len(places),
+            delivery_mode="inline",
+            places=places,
+        )
+        resource_id = result_store.store(full_result)
+        resource_link = f"gmaps://results/{resource_id}"
+
+        return SearchGoogleMapsResult(
+            query=query,
+            country=country,
+            language=language,
+            total_results=len(places),
+            delivery_mode="resource",
+            resource_link=resource_link,
+            resource_id=resource_id,
+            summary=(
+                f"Successfully retrieved {len(places)} places. Results are stored in MCP resource '{resource_link}' "
+                f"to conserve context. Retrieve full place data using the MCP Resource API."
+            ),
+            places=[],
+        )
+
     return SearchGoogleMapsResult(
         query=query,
         country=country,
         language=language,
         total_results=len(places),
+        delivery_mode="inline",
         places=places,
     )
 

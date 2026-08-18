@@ -1,7 +1,9 @@
 """Pydantic schemas and data models for Google Maps MCP Server."""
 
-from typing import Optional, List
-from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+ResultDelivery = Literal["inline", "resource"]
 
 
 class Place(BaseModel):
@@ -64,11 +66,32 @@ class Place(BaseModel):
 class SearchGoogleMapsResult(BaseModel):
     """Result object returned by the search_google_maps tool."""
 
+    model_config = ConfigDict(extra="ignore")
+
     query: str = Field(description="The search query that was executed")
     country: str = Field(description="The ISO 3166-1 alpha-2 country code used (e.g., 'in', 'us')")
     language: str = Field(description="The language code used for results (e.g., 'en', 'hi')")
-    total_results: int = Field(description="Number of places returned in this response")
-    places: List[Place] = Field(default_factory=list, description="List of matched Google Maps places")
+    total_results: int = Field(description="Total number of place results found")
+    delivery_mode: ResultDelivery = Field(
+        default="inline",
+        description="Delivery method used: 'inline' (direct places) or 'resource' (MCP resource link)"
+    )
+    resource_link: Optional[str] = Field(
+        default=None,
+        description="MCP resource URI link (e.g. 'gmaps://results/{resource_id}') when delivery_mode is 'resource'"
+    )
+    resource_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the stored resource if delivery_mode is 'resource'"
+    )
+    summary: Optional[str] = Field(
+        default=None,
+        description="Human-readable summary or instructions on reading the stored resource"
+    )
+    places: List[Place] = Field(
+        default_factory=list,
+        description="List of matched Google Maps places (empty when delivery_mode is 'resource')"
+    )
 
 
 class GetPlaceDetailsResult(BaseModel):

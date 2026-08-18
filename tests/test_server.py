@@ -25,7 +25,7 @@ async def test_server_tool_registration():
 
 
 @pytest.mark.asyncio
-async def test_server_call_search_tool(monkeypatch):
+async def test_server_call_search_tool_with_limit(monkeypatch):
     sample_place = Place(
         place_id="ChIJ_TEST",
         name="Test Brew",
@@ -36,21 +36,63 @@ async def test_server_call_search_tool(monkeypatch):
         review_count=100,
     )
 
-    async def mock_search_places(*args, **kwargs):
+    recorded_kwargs = {}
+
+    async def mock_search_places(query, lang, country, limit):
+        recorded_kwargs["query"] = query
+        recorded_kwargs["lang"] = lang
+        recorded_kwargs["country"] = country
+        recorded_kwargs["limit"] = limit
         return [sample_place]
 
     monkeypatch.setattr("gmaps_mcp.tools.search_google_maps_async", mock_search_places)
 
     result = await server.call_tool(
         "search_google_maps",
-        {"query": "coffee in Bangalore", "limit": 1, "country": "in"}
+        {"query": "coffee in Bangalore", "limit": 5, "country": "in"}
     )
 
     assert not result.is_error
     assert result.structured_content is not None
     assert result.structured_content["total_results"] == 1
     assert result.structured_content["places"][0]["name"] == "Test Brew"
-    assert result.structured_content["places"][0]["place_id"] == "ChIJ_TEST"
+    assert recorded_kwargs["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_server_call_search_tool_without_limit(monkeypatch):
+    sample_place = Place(
+        place_id="ChIJ_TEST_2",
+        name="All Results Cafe",
+        category="Cafe",
+        address="456 Road, City",
+        phone="9876543210",
+        rating=4.8,
+        review_count=200,
+    )
+
+    recorded_kwargs = {}
+
+    async def mock_search_places(query, lang, country, limit):
+        recorded_kwargs["query"] = query
+        recorded_kwargs["lang"] = lang
+        recorded_kwargs["country"] = country
+        recorded_kwargs["limit"] = limit
+        return [sample_place]
+
+    monkeypatch.setattr("gmaps_mcp.tools.search_google_maps_async", mock_search_places)
+
+    # Calling without specifying limit
+    result = await server.call_tool(
+        "search_google_maps",
+        {"query": "coffee in Bangalore", "country": "in"}
+    )
+
+    assert not result.is_error
+    assert result.structured_content is not None
+    assert result.structured_content["total_results"] == 1
+    assert result.structured_content["places"][0]["name"] == "All Results Cafe"
+    assert recorded_kwargs["limit"] is None
 
 
 @pytest.mark.asyncio

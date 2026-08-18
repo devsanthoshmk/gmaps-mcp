@@ -117,6 +117,52 @@ In Cline Settings (`cline_mcp_settings.json`):
 
 ---
 
+### 4. Google Antigravity / AGY CLI
+
+#### Project-Scoped Plugin (`.agents/plugins/gmaps-mcp/mcp_config.json`)
+Antigravity automatically discovers and activates MCP servers placed in project plugins. Create `.agents/plugins/gmaps-mcp/plugin.json`:
+```json
+{
+  "name": "gmaps-mcp",
+  "description": "Google Maps MCP server"
+}
+```
+
+And `.agents/plugins/gmaps-mcp/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "google-maps": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/absolute/path/to/gmaps-mcp",
+        "gmaps-mcp"
+      ]
+    }
+  }
+}
+```
+
+#### Global Configuration (`~/.gemini/antigravity/mcp_config.json` or `~/.gemini/config/mcp_config.json`)
+```json
+{
+  "mcpServers": {
+    "google-maps": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/devsanthoshmk/gmaps-mcp.git",
+        "gmaps-mcp"
+      ]
+    }
+  }
+}
+```
+
+---
+
 ## 🧰 Available Tools
 
 ### 1. `search_google_maps`
@@ -125,7 +171,7 @@ Search Google Maps for businesses, attractions, services, and landmarks.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `query` | `string` | *(required)* | Search term (e.g. `"coffee in Koramangala Bangalore"`, `"dentists near Connaught Place Delhi"`, `"Italian restaurants in New York"`). |
-| `limit` | `integer` | `10` | Maximum number of results to return (`1` to `50`). |
+| `limit` | `integer` | `None` *(optional)* | Maximum number of results to return. If omitted or `null`, fetches as many results as possible across all pages. |
 | `country` | `string` | `"in"` | Two-letter ISO country code for region localization (e.g. `"in"`, `"us"`, `"gb"`, `"de"`, `"fr"`, `"ae"`). |
 | `language` | `string` | `"en"` | Language code for results (e.g. `"en"`, `"hi"`, `"es"`, `"fr"`). |
 
