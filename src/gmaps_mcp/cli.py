@@ -134,8 +134,29 @@ async def _run_details(args: argparse.Namespace) -> None:
         language=args.lang,
     )
 
+    if args.output:
+        if args.output.endswith(".json"):
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(res.model_dump_json(indent=2))
+            print(f"Exported place details to JSON: {args.output}")
+        else:
+            places = [res.place] if res.found and res.place else []
+            _export_csv(places, args.output)
+            print(f"Exported place details to CSV: {args.output}")
+        return
+
     if args.format == "json":
         print(res.model_dump_json(indent=2))
+    elif args.format == "csv":
+        fieldnames = [
+            "place_id", "name", "category", "address", "phone",
+            "international_phone", "website", "domain", "rating",
+            "review_count", "latitude", "longitude", "google_maps_url"
+        ]
+        writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+        writer.writeheader()
+        if res.found and res.place:
+            writer.writerow(res.place.model_dump())
     else:
         if not res.found or not res.place:
             print(f"Place not found for: {args.place!r}")
@@ -212,10 +233,11 @@ def build_parser() -> argparse.ArgumentParser:
     details_parser.add_argument("--lang", default="en", help="Language code (default: en)")
     details_parser.add_argument(
         "--format",
-        choices=["table", "json"],
+        choices=["table", "json", "csv"],
         default="table",
         help="Output display format (default: table)",
     )
+    details_parser.add_argument("--output", default=None, help="Save details directly to CSV or JSON file")
 
     # Top-level fallback flags (if user runs `gmaps-mcp --transport stdio` without typing `serve`)
     parser.add_argument(
