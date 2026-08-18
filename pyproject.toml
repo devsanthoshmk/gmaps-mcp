@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gmaps-mcp"
+version = "0.1.0"
+description = "Self-contained Google Maps MCP Server for AI agents and LLMs"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Google Maps MCP Contributors" }
+]
+keywords = [
+    "mcp",
+    "google-maps",
+    "scraper",
+    "agent",
+    "llm",
+    "fastmcp",
+    "model-context-protocol"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "mcp>=1.3.0,<3.0.0",
+    "aiohttp>=3.9.0",
+    "brotli>=1.1.0",
+    "pydantic>=2.0.0",
+    "phonenumbers>=8.13.0",
+]
+
+[project.scripts]
+gmaps-mcp = "gmaps_mcp.server:main"
+maps-mcp = "gmaps_mcp.server:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gmaps_mcp"]
