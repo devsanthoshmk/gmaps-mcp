@@ -342,26 +342,6 @@ def _extract_places_from_html(html: str, query: str, country: str = "in") -> Lis
     return places
 
 
-def _extract_search_term(query: str) -> Tuple[str, Optional[str]]:
-    """Extract (base_search_term, location_hint) from natural language query.
-
-    Examples:
-        "gift shop in chennai" -> ("gift shop", "chennai")
-        "dentists in chicago" -> ("dentists", "chicago")
-        "coffee near eiffel tower" -> ("coffee", "eiffel tower")
-        "pharmacies at t nagar" -> ("pharmacies", "t nagar")
-        "restaurants" -> ("restaurants", None)
-    """
-    pattern = r'^(.*?)\s+(?:in|near|around|at|within)\s+(.+)$'
-    match = re.match(pattern, query.strip(), flags=re.IGNORECASE)
-    if match:
-        term = match.group(1).strip()
-        loc = match.group(2).strip()
-        if term and loc:
-            return term, loc
-    return query.strip(), None
-
-
 def _build_viewport_tile_url(
     base_search_url: str,
     base_decoded_pb: str,
@@ -550,7 +530,8 @@ async def _fetch_results_page(
 
 
 async def search_google_maps_async(
-    query: str,
+    term: str,
+    location: Optional[str] = None,
     lang: str = "en",
     country: str = "in",
     limit: Optional[int] = None,
@@ -564,7 +545,8 @@ async def search_google_maps_async(
     """Execute asynchronous Google Maps search with deep pagination and coverage-first adaptive grid expansion.
 
     Args:
-        query: Search term (e.g., 'gift shop in chennai', 'dentists in chicago', 'coffee in Paris').
+        term: Search term or category (e.g., 'gift shop', 'dentists', 'coffee').
+        location: Target location or city (e.g., 'Chennai', 'Chicago', 'Paris').
         lang: Language code for Google Maps (e.g., 'en', 'hi', 'fr', 'ja').
         country: ISO country code for Google Maps (e.g., 'in', 'us', 'fr', 'de').
         limit: Optional maximum number of place results to return. If None, fetches as many results as possible.
@@ -578,12 +560,15 @@ async def search_google_maps_async(
     Returns:
         List of Place models.
     """
+    base_term = (term or "").strip()
+    query_str = f"{base_term} in {location.strip()}"
+
     places: List[Place] = []
     seen_ids: set[str] = set()
 
     connector = aiohttp.TCPConnector(ssl=True, limit=concurrency * 2)
     async with aiohttp.ClientSession(connector=connector) as session:
-        search_url, html_places, _ = await _get_search_url(session, query, lang, country, timeout=timeout)
+        search_url, html_places, _ = await _get_search_url(session, query_str, lang, country, timeout=timeout)
         if not search_url:
             if html_places:
                 for p in html_places:
@@ -592,7 +577,7 @@ async def search_google_maps_async(
                         places.append(p)
                 return places[:limit] if limit and limit > 0 else places
 
-            logger.warning("[%s] Could not obtain search URL, aborting search.", query)
+            logger.warning("[%s] Could not obtain search URL, aborting search.", query_str)
             return []
 
         # Extract base decoded protobuf template from search_url
@@ -608,7 +593,7 @@ async def search_google_maps_async(
         consecutive_stagnant = 0
         while True:
             page_places, bounds = await _fetch_results_page(
-                session, search_url, query, start=start, country=country, timeout=timeout
+                session, search_url, query_str, start=start, country=country, timeout=timeout
             )
             if bounds and not detected_bounds:
                 detected_bounds = bounds
@@ -654,7 +639,7 @@ async def search_google_maps_async(
             tile_span_km = (effective_span / effective_grid_size) / 1000.0 if effective_grid_size > 0 else 0.0
             logger.info(
                 "[%s] span=%.1fkm target=%.1fkm grid=%dx%d tiles=%d tile_span=%.1fkm",
-                query,
+                query_str,
                 span_m / 1000,
                 target_tile_meters / 1000,
                 effective_grid_size,
@@ -663,15 +648,15 @@ async def search_google_maps_async(
                 tile_span_km,
             )
             if effective_grid_size > 1:
-                base_term, _ = _extract_search_term(query)
                 grid_tiles = _generate_geo_grid(center_lat, center_lng, effective_span, grid_size=effective_grid_size)
                 logger.info(
-                    "[%s] Auto-detected bounding box center=(%.4f, %.4f), span=%.0fm. Crawling %d sub-viewport grid tiles...",
-                    query,
+                    "[%s] Auto-detected bounding box center=(%.4f, %.4f), span=%.0fm. Crawling %d sub-viewport grid tiles (base_term=%r)...",
+                    query_str,
                     center_lat,
                     center_lng,
                     span_m,
                     len(grid_tiles),
+                    base_term,
                 )
                 sem = asyncio.Semaphore(concurrency)
 
@@ -680,7 +665,7 @@ async def search_google_maps_async(
                     async with sem:
                         logger.warning(
                             "[%s] TILE %d START lat=%.6f lng=%.6f span=%.1fm",
-                            query,
+                            query_str,
                             tile_idx,
                             lat,
                             lng,
@@ -709,7 +694,7 @@ async def search_google_maps_async(
                                 break
                         logger.warning(
                             "[%s] TILE %d DONE: %d places",
-                            query,
+                            query_str,
                             tile_idx,
                             len(tile_places),
                         )
@@ -728,7 +713,7 @@ async def search_google_maps_async(
                     if limit and limit > 0 and len(places) >= limit:
                         break
 
-    logger.info("[%s] Search finished. Found %d unique place(s).", query, len(places))
+    logger.info("[%s] Search finished. Found %d unique place(s).", query_str, len(places))
     return places[:limit] if limit and limit > 0 else places
 
 
@@ -782,7 +767,8 @@ async def get_place_details_async(
         search_queries = [query_or_id] if not is_place_id else [clean_id, f"place_id:{clean_id}"]
         for sq in search_queries:
             results = await search_google_maps_async(
-                query=sq,
+                term=sq,
+                location=None,
                 lang=lang,
                 country=country,
                 limit=1,

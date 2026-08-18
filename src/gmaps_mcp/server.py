@@ -38,25 +38,28 @@ server = MCPServer(
 @server.tool(
     name="search_google_maps",
     description=(
-        "Search Google Maps for local businesses, places, points of interest, and services. "
+        "Search Google Maps for local businesses, places, points of interest, and services within a specified location. "
         "Returns structured place data including business name, Google Place ID, category, "
         "formatted street address, phone numbers, website URL, geo-coordinates (latitude/longitude), "
         "star rating, total review count, and direct Google Maps URL."
     ),
 )
 async def search_google_maps_tool(
-    query: Annotated[
+    term: Annotated[
         str,
         Field(
             description=(
-                "The search query for Google Maps. Can be a business category, specific place name, "
-                "service, or landmark along with a location. Examples: "
-                "'coffee shops in Koramangala Bangalore', "
-                "'dentists near Connaught Place Delhi', "
-                "'Italian restaurants in Bandra Mumbai', "
-                "'hospitals in Hyderabad', "
-                "'electricians near Indiranagar', "
-                "'museums in London'."
+                "The search term, business category, service, or place name (e.g. "
+                "'coffee shops', 'dentists', 'Italian restaurants', 'hospitals', 'electricians', 'museums')."
+            )
+        ),
+    ],
+    location: Annotated[
+        str,
+        Field(
+            description=(
+                "The target location, city, neighborhood, or landmark to search within (e.g. "
+                "'Koramangala Bangalore', 'Connaught Place Delhi', 'Bandra Mumbai', 'Hyderabad', 'London', 'Chicago')."
             )
         ),
     ],
@@ -65,7 +68,12 @@ async def search_google_maps_tool(
         Field(
             default=None,
             ge=1,
-            description="Optional maximum number of place results to return. If omitted or not provided, fetches as many results as possible across all available pages.",
+            description=(
+                "Optional maximum number of place results to return. "
+                "Recommendation: It is generally NOT recommended to use limit frequently; use only when strictly necessary. "
+                "Google Maps delivers results in full batch pages/tiles and results are simply trimmed to the limit afterwards, "
+                "so setting a limit does not save server or network resources. Leave omitted/null for complete results."
+            ),
         ),
     ] = None,
     country: Annotated[
@@ -103,7 +111,8 @@ async def search_google_maps_tool(
     ] = "inline",
 ) -> SearchGoogleMapsResult:
     return await search_google_maps(
-        query=query,
+        term=term,
+        location=location,
         limit=limit,
         country=country,
         language=language,

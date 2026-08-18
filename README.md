@@ -28,12 +28,12 @@ npx mcp-add -n google-maps -t stdio -c "uvx --from git+https://github.com/devsan
 
 ```bash
 # Direct run without cloning
-uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp search "bakeries in Paris" --country fr --limit 10
+uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp search "bakeries" "Paris" --country fr --limit 10
 
 # Or clone and run locally
 git clone https://github.com/devsanthoshmk/gmaps-mcp.git
 cd gmaps-mcp
-uv run gmaps-mcp search "bakeries in Paris" --country fr --limit 10
+uv run gmaps-mcp search "bakeries" "Paris" --country fr --limit 10
 ```
 
 ---
@@ -43,9 +43,9 @@ uv run gmaps-mcp search "bakeries in Paris" --country fr --limit 10
 ### Search
 
 ```bash
-uv run gmaps-mcp search "dentists in Chicago" --limit 10 --country us --format table
-uv run gmaps-mcp search "bakeries in Paris" --country fr --grid --format table
-uv run gmaps-mcp search "pharmacies in Chennai" --grid --country in --output pharmacies.csv
+uv run gmaps-mcp search "dentists" "Chicago" --limit 10 --country us --format table
+uv run gmaps-mcp search "bakeries" "Paris" --country fr --grid --format table
+uv run gmaps-mcp search "pharmacies" "Chennai" --grid --country in --output pharmacies.csv
 ```
 
 ### Place Details
@@ -97,7 +97,8 @@ uv run gmaps-mcp serve --transport streamable-http --host 0.0.0.0 --port 8000  #
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `query` | string | *required* | e.g. `"cafes in Brooklyn"` |
+| `term` | string | *required* | Search term / business category (e.g. `"coffee shops"`, `"dentists"`) |
+| `location` | string | *required* | Target location / city (e.g. `"Paris"`, `"Chicago"`, `"Chennai"`) |
 | `limit` | integer | null | Max results |
 | `grid` | boolean | false | Enable geo-grid tiling for large area coverage |
 | `country` | string | `"in"` | ISO country code (`"us"`, `"fr"`, `"jp"`) |

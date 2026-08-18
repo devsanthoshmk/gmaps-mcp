@@ -69,6 +69,8 @@ class SearchGoogleMapsResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     query: str = Field(description="The search query that was executed")
+    term: Optional[str] = Field(default=None, description="The search term that was executed")
+    location: Optional[str] = Field(default=None, description="The target location searched within")
     country: str = Field(description="The ISO 3166-1 alpha-2 country code used (e.g., 'in', 'us')")
     language: str = Field(description="The language code used for results (e.g., 'en', 'hi')")
     total_results: int = Field(description="Total number of place results found")

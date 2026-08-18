@@ -123,8 +123,9 @@ async def test_get_place_details_async_place_id(monkeypatch):
         country="in",
     )
 
-    async def mock_search_maps(query, **kwargs):
-        if "ChIJRTQj_11nUjoRzYQ6wX2sUvY" in query:
+    async def mock_search_maps(term=None, location=None, query=None, **kwargs):
+        q = query or term or ""
+        if "ChIJRTQj_11nUjoRzYQ6wX2sUvY" in q:
             return [sample_place]
         return []
 
@@ -139,30 +140,6 @@ async def test_get_place_details_async_place_id(monkeypatch):
     res2 = await get_place_details_async("place_id:ChIJRTQj_11nUjoRzYQ6wX2sUvY")
     assert res2 is not None
     assert res2.name == "Marina Beach"
-
-
-def test_extract_search_term():
-    from gmaps_mcp.scraper.crawler import _extract_search_term
-
-    term, loc = _extract_search_term("gift shop in chennai")
-    assert term == "gift shop"
-    assert loc == "chennai"
-
-    term, loc = _extract_search_term("dentists in chicago")
-    assert term == "dentists"
-    assert loc == "chicago"
-
-    term, loc = _extract_search_term("coffee near eiffel tower")
-    assert term == "coffee"
-    assert loc == "eiffel tower"
-
-    term, loc = _extract_search_term("pharmacies at t nagar")
-    assert term == "pharmacies"
-    assert loc == "t nagar"
-
-    term, loc = _extract_search_term("supermarket")
-    assert term == "supermarket"
-    assert loc is None
 
 
 def test_generate_geo_grid():
@@ -272,7 +249,7 @@ async def test_search_google_maps_async_adaptive_grid_small_area(monkeypatch):
     monkeypatch.setattr("gmaps_mcp.scraper.crawler._get_search_url", mock_get_search_url)
     monkeypatch.setattr("gmaps_mcp.scraper.crawler._fetch_results_page", mock_fetch_results_page)
 
-    places = await search_google_maps_async("gift shop in small area", grid=True, target_tile_meters=5000.0)
+    places = await search_google_maps_async(term="gift shop", location="small area", grid=True, target_tile_meters=5000.0)
     assert len(places) == 1
     # For a 4km area with 5km target tile, grid_size = ceil(4/5) = 1 <= 1, so no sub-viewport tile searches should be triggered
     # Only pagination on base url
@@ -286,7 +263,7 @@ async def test_search_google_maps_async_adaptive_grid_large_area(monkeypatch):
 
     # Mock _get_search_url with span = 10000m (> 5000m target -> 2x2 = 4 tiles)
     async def mock_get_search_url(session, query, lang, country, timeout=20):
-        return "https://www.google.com/search?tbm=map&pb=!1stest", [], (13.0827, 80.2707, 10000.0)
+        return "https://www.google.com/search?tbm=map&q=gift%20shop%20in%20big%20city&pb=!1stest", [], (13.0827, 80.2707, 10000.0)
 
     fetched_urls = []
 
@@ -303,12 +280,14 @@ async def test_search_google_maps_async_adaptive_grid_large_area(monkeypatch):
     monkeypatch.setattr("gmaps_mcp.scraper.crawler._get_search_url", mock_get_search_url)
     monkeypatch.setattr("gmaps_mcp.scraper.crawler._fetch_results_page", mock_fetch_results_page)
 
-    places = await search_google_maps_async("gift shop in big city", grid=True, target_tile_meters=5000.0)
+    places = await search_google_maps_async(term="gift shop", location="big city", grid=True, target_tile_meters=5000.0)
     # ceil(10000 / 5000) = 2 -> 2x2 = 4 tiles
     tile_urls = [u for u in fetched_urls if "!4m8" in unquote(u)]
     assert len(tile_urls) == 4
     # Check that places from initial search and all 4 tiles were collected
     assert len(places) == 5
+    # Verify tile URLs used base_term 'gift shop' in the query parameter
+    assert all("q=gift%20shop" in u for u in tile_urls)
 
 
 

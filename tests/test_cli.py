@@ -11,9 +11,10 @@ def test_cli_parser_build():
     parser = build_parser()
 
     # Test search args
-    args = parser.parse_args(["search", "bakeries in Paris", "--limit", "25", "--grid", "--country", "fr", "--format", "json"])
+    args = parser.parse_args(["search", "bakeries", "Paris", "--limit", "25", "--grid", "--country", "fr", "--format", "json"])
     assert args.command == "search"
-    assert args.query == "bakeries in Paris"
+    assert args.term == "bakeries"
+    assert args.location == "Paris"
     assert args.limit == 25
     assert args.grid is True
     assert args.country == "fr"
@@ -35,9 +36,11 @@ def test_cli_parser_build():
 @pytest.mark.asyncio
 async def test_cli_search_command_output(capsys):
     parser = build_parser()
-    args = parser.parse_args(["search", "coffee in Paris", "--country", "fr", "--format", "table"])
+    args = parser.parse_args(["search", "coffee", "Paris", "--country", "fr", "--format", "table"])
 
     sample_res = SearchGoogleMapsResult(
+        term="coffee",
+        location="Paris",
         query="coffee in Paris",
         country="fr",
         language="en",

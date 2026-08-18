@@ -82,7 +82,8 @@ def cmd_serve(args: argparse.Namespace) -> None:
 async def _run_search(args: argparse.Namespace) -> None:
     """Execute search command."""
     res = await search_google_maps(
-        query=args.query,
+        term=args.term,
+        location=args.location,
         limit=args.limit,
         grid=args.grid,
         country=args.country,
@@ -122,7 +123,8 @@ async def _run_search(args: argparse.Namespace) -> None:
                 for sp in res.sample_places:
                     print(f"  - {sp}")
         else:
-            print(f"\nSearch: {res.query!r} | Country: {res.country.upper()} | Found: {res.total_results} place(s)\n")
+            loc_str = f" in {res.location!r}" if res.location else ""
+            print(f"\nSearch: {res.term!r}{loc_str} | Country: {res.country.upper()} | Found: {res.total_results} place(s)\n")
             print(_format_table(res.places))
 
 
@@ -203,8 +205,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Search subcommand
     search_parser = subparsers.add_parser("search", help="Search Google Maps places")
-    search_parser.add_argument("query", help="Search query (e.g. 'bakeries in Paris', 'dentists in Chicago')")
-    search_parser.add_argument("--limit", type=int, default=None, help="Maximum number of places (default: unlimited)")
+    search_parser.add_argument("term", help="Search term (e.g. 'bakeries', 'dentists', 'gift shops')")
+    search_parser.add_argument("location", help="Target location/city/area (e.g. 'Paris', 'Chicago', 'Chennai')")
+    search_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional maximum number of places to return (default: unlimited). Use only when strictly necessary, as results are trimmed after retrieval.",
+    )
     search_parser.add_argument(
         "--grid",
         action="store_true",

@@ -21,13 +21,21 @@ logger = logging.getLogger("gmaps_mcp.tools")
 
 
 async def search_google_maps(
-    query: Annotated[
+    term: Annotated[
         str,
         Field(
             description=(
-                "Search query for places, businesses, or points of interest.\n"
-                "Examples: 'dentists in Chicago', 'restaurants in Tokyo', 'hospitals near me',\n"
-                "'pharmacies in Chennai', 'hotels in Paris', 'coffee shops in Brooklyn'."
+                "Search term for places, businesses, or points of interest.\n"
+                "Examples: 'dentists', 'restaurants', 'hospitals', 'pharmacies', 'hotels', 'coffee shops'."
+            )
+        ),
+    ],
+    location: Annotated[
+        str,
+        Field(
+            description=(
+                "Target location, city, neighborhood, or landmark to search within.\n"
+                "Examples: 'Chicago', 'Tokyo', 'Chennai', 'Paris', 'Brooklyn', 'Koramangala Bangalore'."
             )
         ),
     ],
@@ -36,8 +44,9 @@ async def search_google_maps(
         Field(
             default=None,
             description=(
-                "Maximum number of place results to return. If omitted or null, returns as many results as possible "
-                "from Google Maps without artificial limits."
+                "Maximum number of place results to return. "
+                "Recommendation: It is generally NOT recommended to use limit frequently; use only when strictly necessary. "
+                "Setting a limit does not save server or network resources. Leave omitted/null for complete results."
             ),
         ),
     ] = None,
@@ -97,9 +106,14 @@ async def search_google_maps(
     - Geo-coordinates (lat/long) or addresses of locations
     - Ratings and review volume comparisons for businesses in any city or area.
     """
+    effective_term = term.strip()
+    effective_location = location.strip()
+    full_query = f"{effective_term} in {effective_location}"
+
     logger.info(
-        "Tool call search_google_maps: query=%r, limit=%r, grid=%r, country=%r, language=%r, result_delivery=%r",
-        query,
+        "Tool call search_google_maps: term=%r, location=%r, limit=%r, grid=%r, country=%r, language=%r, result_delivery=%r",
+        effective_term,
+        effective_location,
         limit,
         grid,
         country,
@@ -108,7 +122,8 @@ async def search_google_maps(
     )
 
     places = await search_google_maps_async(
-        query=query,
+        term=effective_term,
+        location=effective_location,
         lang=language,
         country=country,
         limit=limit,
@@ -117,7 +132,9 @@ async def search_google_maps(
 
     if result_delivery == "resource":
         full_result = SearchGoogleMapsResult(
-            query=query,
+            term=effective_term,
+            location=effective_location,
+            query=full_query,
             country=country,
             language=language,
             total_results=len(places),
@@ -132,7 +149,9 @@ async def search_google_maps(
         ]
 
         return SearchGoogleMapsResult(
-            query=query,
+            term=effective_term,
+            location=effective_location,
+            query=full_query,
             country=country,
             language=language,
             total_results=len(places),
@@ -148,7 +167,9 @@ async def search_google_maps(
         )
 
     return SearchGoogleMapsResult(
-        query=query,
+        term=effective_term,
+        location=effective_location,
+        query=full_query,
         country=country,
         language=language,
         total_results=len(places),

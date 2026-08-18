@@ -21,11 +21,15 @@ async def test_server_tool_registration():
     assert search_tool.description is not None
     assert "Search Google Maps" in search_tool.description
     properties = search_tool.input_schema.get("properties", {})
-    assert "query" in properties
+    assert "term" in properties
+    assert "location" in properties
     assert "limit" in properties
     assert "country" in properties
     assert "language" in properties
     assert "result_delivery" in properties
+    required = search_tool.input_schema.get("required", [])
+    assert "term" in required
+    assert "location" in required
 
 
 @pytest.mark.asyncio
@@ -50,8 +54,9 @@ async def test_server_call_search_tool_with_limit(monkeypatch):
 
     recorded_kwargs = {}
 
-    async def mock_search_places(query, lang, country, limit=None, **kwargs):
-        recorded_kwargs["query"] = query
+    async def mock_search_places(term=None, location=None, lang="en", country="in", limit=None, **kwargs):
+        recorded_kwargs["term"] = term
+        recorded_kwargs["location"] = location
         recorded_kwargs["lang"] = lang
         recorded_kwargs["country"] = country
         recorded_kwargs["limit"] = limit
@@ -61,7 +66,7 @@ async def test_server_call_search_tool_with_limit(monkeypatch):
 
     result = await server.call_tool(
         "search_google_maps",
-        {"query": "coffee in Bangalore", "limit": 5, "country": "in", "result_delivery": "inline"}
+        {"term": "coffee", "location": "Bangalore", "limit": 5, "country": "in", "result_delivery": "inline"}
     )
 
     assert not result.is_error
@@ -69,6 +74,8 @@ async def test_server_call_search_tool_with_limit(monkeypatch):
     assert result.structured_content["total_results"] == 1
     assert result.structured_content["delivery_mode"] == "inline"
     assert result.structured_content["places"][0]["name"] == "Test Brew"
+    assert recorded_kwargs["term"] == "coffee"
+    assert recorded_kwargs["location"] == "Bangalore"
     assert recorded_kwargs["limit"] == 5
 
 
@@ -86,8 +93,9 @@ async def test_server_call_search_tool_without_limit(monkeypatch):
 
     recorded_kwargs = {}
 
-    async def mock_search_places(query, lang, country, limit=None, **kwargs):
-        recorded_kwargs["query"] = query
+    async def mock_search_places(term=None, location=None, lang="en", country="in", limit=None, **kwargs):
+        recorded_kwargs["term"] = term
+        recorded_kwargs["location"] = location
         recorded_kwargs["lang"] = lang
         recorded_kwargs["country"] = country
         recorded_kwargs["limit"] = limit
@@ -98,7 +106,7 @@ async def test_server_call_search_tool_without_limit(monkeypatch):
     # Calling without specifying limit
     result = await server.call_tool(
         "search_google_maps",
-        {"query": "coffee in Bangalore", "country": "in"}
+        {"term": "coffee", "location": "Bangalore", "country": "in"}
     )
 
     assert not result.is_error
@@ -124,7 +132,7 @@ async def test_server_call_search_tool_with_resource_delivery(monkeypatch):
         for i in range(10)
     ]
 
-    async def mock_search_places(query, lang, country, limit=None, **kwargs):
+    async def mock_search_places(term=None, location=None, lang="en", country="in", limit=None, **kwargs):
         return sample_places
 
     monkeypatch.setattr("gmaps_mcp.tools.search_google_maps_async", mock_search_places)
@@ -132,7 +140,7 @@ async def test_server_call_search_tool_with_resource_delivery(monkeypatch):
     # Execute search with result_delivery="resource"
     result = await server.call_tool(
         "search_google_maps",
-        {"query": "restaurants in Mumbai", "result_delivery": "resource"}
+        {"term": "restaurants", "location": "Mumbai", "result_delivery": "resource"}
     )
 
     assert not result.is_error
