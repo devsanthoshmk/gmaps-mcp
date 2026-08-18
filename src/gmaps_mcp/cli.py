@@ -264,17 +264,23 @@ async def async_main(args: argparse.Namespace) -> None:
         await _run_search(args)
     elif args.command == "details":
         await _run_details(args)
-    elif args.command == "serve":
-        cmd_serve(args)
     else:
-        cmd_serve(args)
+        if getattr(args, "transport", "stdio") == "streamable-http":
+            await server.run_streamable_http_async(host=args.host, port=args.port)
+        else:
+            await server.run_stdio_async()
 
 
 def main() -> None:
     """Main CLI entrypoint."""
     parser = build_parser()
     args = parser.parse_args()
-    asyncio.run(async_main(args))
+    if args.command == "search":
+        asyncio.run(_run_search(args))
+    elif args.command == "details":
+        asyncio.run(_run_details(args))
+    else:
+        cmd_serve(args)
 
 
 if __name__ == "__main__":
