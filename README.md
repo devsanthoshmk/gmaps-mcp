@@ -18,18 +18,22 @@ A Google Maps scraper server and CLI for AI agents and terminal use. **No API ke
 
 ## 🚀 Quickstart
 
-```bash
-git clone https://github.com/devsanthoshmk/gmaps-mcp.git
-cd gmaps-mcp
+### Add to AI Agents (Claude Desktop, Cursor, Windsurf, Cline, Zed, etc.)
 
-uv run gmaps-mcp search "bakeries in Paris" --country fr --limit 10
-uv run gmaps-mcp serve
+```bash
+npx mcp-add -n google-maps -t stdio -c "uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp serve"
 ```
 
-**Or run without cloning:**
+### Or Run via CLI
 
 ```bash
-uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp serve
+# Direct run without cloning
+uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp search "bakeries in Paris" --country fr --limit 10
+
+# Or clone and run locally
+git clone https://github.com/devsanthoshmk/gmaps-mcp.git
+cd gmaps-mcp
+uv run gmaps-mcp search "bakeries in Paris" --country fr --limit 10
 ```
 
 ---
@@ -60,17 +64,7 @@ uv run gmaps-mcp serve --transport streamable-http --host 0.0.0.0 --port 8000  #
 
 ---
 
-## 🔌 MCP Client Config
-
-### ⚡ One-liner (Recommended)
-
-Works with all `mcp-add`-supported agents — Claude Desktop, Cursor, Windsurf, Cline, Zed, Copilot, Continue, and more:
-
-```bash
-npx mcp-add -n google-maps -t stdio -c "uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp serve"
-```
-
-### Manual JSON config
+## 🔌 MCP Client Config (Manual)
 
 ```json
 {
