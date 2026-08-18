@@ -127,6 +127,36 @@ def get_stored_search_results(resource_id: str) -> str:
     return result.model_dump_json(indent=2)
 
 
+def _register_stored_resource(entry) -> None:
+    """Register stored search result dynamically into the server's concrete resources list."""
+    from mcp.server.mcpserver.resources.types import FunctionResource
+
+    uri = f"gmaps://results/{entry.resource_id}"
+    resource = FunctionResource.from_function(
+        fn=lambda rid=entry.resource_id: result_store.get_json(rid),
+        uri=uri,
+        name=f"search_{entry.resource_id}",
+        title=f"Google Maps: {entry.result.query} ({entry.result.total_results} places)",
+        description=(
+            f"Stored search results for '{entry.result.query}' in {entry.result.country.upper()} "
+            f"({entry.result.total_results} results found)"
+        ),
+        mime_type="application/json",
+    )
+    server.add_resource(resource)
+
+
+def _unregister_stored_resource(resource_id: str) -> None:
+    """Remove expired/deleted stored search result from concrete resources."""
+    uri = f"gmaps://results/{resource_id}"
+    if hasattr(server, "_resource_manager") and hasattr(server._resource_manager, "_resources"):
+        server._resource_manager._resources.pop(uri, None)
+
+
+result_store.add_store_callback(_register_stored_resource)
+result_store.add_delete_callback(_unregister_stored_resource)
+
+
 @server.tool(
     name="get_place_details",
     description=(

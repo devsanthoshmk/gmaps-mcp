@@ -50,7 +50,7 @@ async def test_server_call_search_tool_with_limit(monkeypatch):
 
     recorded_kwargs = {}
 
-    async def mock_search_places(query, lang, country, limit):
+    async def mock_search_places(query, lang, country, limit=None, **kwargs):
         recorded_kwargs["query"] = query
         recorded_kwargs["lang"] = lang
         recorded_kwargs["country"] = country
@@ -86,7 +86,7 @@ async def test_server_call_search_tool_without_limit(monkeypatch):
 
     recorded_kwargs = {}
 
-    async def mock_search_places(query, lang, country, limit):
+    async def mock_search_places(query, lang, country, limit=None, **kwargs):
         recorded_kwargs["query"] = query
         recorded_kwargs["lang"] = lang
         recorded_kwargs["country"] = country
@@ -124,7 +124,7 @@ async def test_server_call_search_tool_with_resource_delivery(monkeypatch):
         for i in range(10)
     ]
 
-    async def mock_search_places(query, lang, country, limit):
+    async def mock_search_places(query, lang, country, limit=None, **kwargs):
         return sample_places
 
     monkeypatch.setattr("gmaps_mcp.tools.search_google_maps_async", mock_search_places)
@@ -161,6 +161,11 @@ async def test_server_call_search_tool_with_resource_delivery(monkeypatch):
     assert len(data["places"]) == 10
     assert data["places"][0]["name"] == "Place 0"
     assert data["places"][9]["name"] == "Place 9"
+
+    # Verify that list_resources now includes this stored resource!
+    resources_list = await server.list_resources()
+    resource_uris = [str(r.uri) for r in resources_list]
+    assert resource_link in resource_uris
 
 
 @pytest.mark.asyncio

@@ -88,6 +88,10 @@ class SearchGoogleMapsResult(BaseModel):
         default=None,
         description="Human-readable summary or instructions on reading the stored resource"
     )
+    sample_places: List[str] = Field(
+        default_factory=list,
+        description="Preview of top place names and categories found (useful when delivery_mode is 'resource')"
+    )
     places: List[Place] = Field(
         default_factory=list,
         description="List of matched Google Maps places (empty when delivery_mode is 'resource')"

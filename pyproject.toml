@@ -48,8 +48,8 @@ Repository = "https://github.com/devsanthoshmk/gmaps-mcp.git"
 Issues = "https://github.com/devsanthoshmk/gmaps-mcp/issues"
 
 [project.scripts]
-gmaps-mcp = "gmaps_mcp.server:main"
-maps-mcp = "gmaps_mcp.server:main"
+gmaps-mcp = "gmaps_mcp.cli:main"
+maps-mcp = "gmaps_mcp.cli:main"
 
 [project.optional-dependencies]
 dev = [

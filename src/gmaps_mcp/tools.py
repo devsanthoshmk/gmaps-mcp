@@ -1,24 +1,20 @@
-"""MCP Tools definitions and handlers for Google Maps.
+"""Google Maps MCP Tool implementations.
 
-Provides rich, descriptive tool schemas and execution handlers optimized
-for AI agents and LLM tool calling.
+Provides the core async tool handlers invoked by the FastMCP server.
+All business logic is isolated here for clean separation of concerns and testability.
 """
 
 import logging
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Optional
 
 from pydantic import Field
 
 from gmaps_mcp.schemas import (
     GetPlaceDetailsResult,
-    Place,
     ResultDelivery,
     SearchGoogleMapsResult,
 )
-from gmaps_mcp.scraper import (
-    get_place_details_async,
-    search_google_maps_async,
-)
+from gmaps_mcp.scraper import get_place_details_async, search_google_maps_async
 from gmaps_mcp.storage import result_store
 
 logger = logging.getLogger("gmaps_mcp.tools")
@@ -29,14 +25,9 @@ async def search_google_maps(
         str,
         Field(
             description=(
-                "The search query for Google Maps. Can be a business category, specific place name, "
-                "service, or landmark along with a location. Examples: "
-                "'coffee shops in Koramangala Bangalore', "
-                "'dentists near Connaught Place Delhi', "
-                "'Italian restaurants in Bandra Mumbai', "
-                "'hospitals in Hyderabad', "
-                "'electricians near Indiranagar', "
-                "'museums in London'."
+                "Search query for places, businesses, or points of interest.\n"
+                "Examples: 'dentists in Chicago', 'restaurants in Tokyo', 'hospitals near me',\n"
+                "'pharmacies in Chennai', 'hotels in Paris', 'coffee shops in Brooklyn'."
             )
         ),
     ],
@@ -44,18 +35,29 @@ async def search_google_maps(
         Optional[int],
         Field(
             default=None,
-            ge=1,
-            description="Optional maximum number of place results to return. If omitted or not provided, fetches as many results as possible across all available pages.",
+            description=(
+                "Maximum number of place results to return. If omitted or null, returns as many results as possible "
+                "from Google Maps without artificial limits."
+            ),
         ),
     ] = None,
+    grid: Annotated[
+        bool,
+        Field(
+            default=False,
+            description=(
+                "When True, enables dynamic geospatial viewport grid tiling across the auto-detected city/region bounding box, "
+                "yielding massive multi-zone coverage worldwide."
+            ),
+        ),
+    ] = False,
     country: Annotated[
         str,
         Field(
             default="in",
             description=(
-                "Two-letter ISO 3166-1 alpha-2 country code to localize search results and map boundaries. "
-                "Default is 'in' (India). Other examples: 'us' (United States), 'gb' or 'uk' (United Kingdom), "
-                "'ca' (Canada), 'au' (Australia), 'de' (Germany), 'fr' (France), 'sg' (Singapore), 'ae' (UAE)."
+                "Two-letter ISO 3166-1 alpha-2 country code for region localization (e.g., 'us', 'in', 'uk', 'fr', 'de').\n"
+                "Used to bias search results geographically."
             ),
         ),
     ] = "in",
@@ -64,19 +66,19 @@ async def search_google_maps(
         Field(
             default="en",
             description=(
-                "Language code for the results (e.g. 'en' for English, 'hi' for Hindi, 'es' for Spanish, "
-                "'fr' for French, 'de' for German, 'ja' for Japanese). Default is 'en'."
+                "Language code for the response (e.g., 'en' for English, 'hi' for Hindi, 'fr' for French, 'ja' for Japanese).\n"
+                "Controls the language of place names, categories, and addresses."
             ),
         ),
     ] = "en",
     result_delivery: Annotated[
-        Literal["inline", "resource"],
+        ResultDelivery,
         Field(
             default="inline",
             description=(
-                "Delivery method for search results:\n"
-                "- 'inline': Return all structured place results directly inside the tool response (default).\n"
-                "- 'resource': Store full results server-side in an MCP resource and return an MCP resource_link URI "
+                "How the search results should be returned:\n"
+                "- 'inline': Returns the full list of Place objects directly in the tool response.\n"
+                "- 'resource': Stores the complete results server-side and returns only an MCP resource link "
                 "(e.g. 'gmaps://results/{resource_id}'), preventing LLM context window bloat for large result sets."
             ),
         ),
@@ -96,9 +98,10 @@ async def search_google_maps(
     - Ratings and review volume comparisons for businesses in any city or area.
     """
     logger.info(
-        "Tool call search_google_maps: query=%r, limit=%r, country=%r, language=%r, result_delivery=%r",
+        "Tool call search_google_maps: query=%r, limit=%r, grid=%r, country=%r, language=%r, result_delivery=%r",
         query,
         limit,
+        grid,
         country,
         language,
         result_delivery,
@@ -109,6 +112,7 @@ async def search_google_maps(
         lang=language,
         country=country,
         limit=limit,
+        grid=grid,
     )
 
     if result_delivery == "resource":
@@ -122,6 +126,10 @@ async def search_google_maps(
         )
         resource_id = result_store.store(full_result)
         resource_link = f"gmaps://results/{resource_id}"
+        sample_preview = [
+            f"{i + 1}. {p.name} ({p.category or 'Place'}) - Rating: {p.rating or 'N/A'}"
+            for i, p in enumerate(places[:3])
+        ]
 
         return SearchGoogleMapsResult(
             query=query,
@@ -135,6 +143,7 @@ async def search_google_maps(
                 f"Successfully retrieved {len(places)} places. Results are stored in MCP resource '{resource_link}' "
                 f"to conserve context. Retrieve full place data using the MCP Resource API."
             ),
+            sample_places=sample_preview,
             places=[],
         )
 
@@ -154,7 +163,7 @@ async def get_place_details(
         Field(
             description=(
                 "The place identifier to fetch details for. Can be either:\n"
-                "1. A Google Place ID (e.g., 'ChIJ12k5kG_iDDkRwuzibQwYZ4M' or 'place_id:ChIJ...')\n"
+                "1. A Google Place ID (e.g., 'ChIJ12k5kG_iDDkRwuzibQwYZ4M' or 'place_id:ChIJ12k5kG_iDDkRwuzibQwYZ4M')\n"
                 "2. An exact place / business name and location (e.g., 'AIIMS New Delhi' or 'Taj Mahal Palace Mumbai')."
             )
         ),
@@ -174,11 +183,11 @@ async def get_place_details(
         ),
     ] = "en",
 ) -> GetPlaceDetailsResult:
-    """Retrieve detailed information for a single specific Google Maps place or business.
+    """Retrieve detailed information about a specific Google Maps place or business.
 
-    Looks up a place using its unique Google Place ID (ChIJ...) or specific landmark/business name.
-    Returns complete structured details including address, phone number, website, rating,
-    coordinates, and Google Maps URL.
+    Accepts either a Google Place ID or an exact place name.
+    Returns complete structured place data including name, address, phone number,
+    website, coordinates, star rating, and review count.
     """
     logger.info(
         "Tool call get_place_details: place=%r, country=%r, language=%r",
@@ -187,14 +196,22 @@ async def get_place_details(
         language,
     )
 
-    result_place = await get_place_details_async(
+    result = await get_place_details_async(
         query_or_id=place,
         lang=language,
         country=country,
     )
 
+    if result is None:
+        logger.warning("Place not found for query_or_id=%r", place)
+        return GetPlaceDetailsResult(
+            place=None,
+            found=False,
+            query_or_id=place,
+        )
+
     return GetPlaceDetailsResult(
-        place=result_place,
-        found=result_place is not None,
+        place=result,
+        found=True,
         query_or_id=place,
     )
