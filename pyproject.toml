@@ -33,6 +33,12 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.urls]
+Homepage = "https://github.com/devsanthoshmk/gmaps-mcp"
+Repository = "https://github.com/devsanthoshmk/gmaps-mcp.git"
+Issues = "https://github.com/devsanthoshmk/gmaps-mcp/issues"
+
 dependencies = [
     "mcp>=1.3.0,<3.0.0",
     "aiohttp>=3.9.0",

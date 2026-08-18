@@ -24,7 +24,7 @@ Run directly using [`uvx`](https://docs.astral.sh/uv/):
 
 ```bash
 # Run directly from GitHub repository
-uvx --from git+https://github.com/<your-username>/gmaps-mcp.git gmaps-mcp
+uvx --from git+https://github.com/devsanthoshmk/gmaps-mcp.git gmaps-mcp
 ```
 
 Or from a local clone:
@@ -48,7 +48,7 @@ Add this to your `claude_desktop_config.json` (`~/Library/Application Support/Cl
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/<your-username>/gmaps-mcp.git",
+        "git+https://github.com/devsanthoshmk/gmaps-mcp.git",
         "gmaps-mcp"
       ]
     }
@@ -65,7 +65,7 @@ Add this to your `claude_desktop_config.json` (`~/Library/Application Support/Cl
       "args": [
         "run",
         "--directory",
-        "/absolute/path/to/gmap-mcp",
+        "/absolute/path/to/gmaps-mcp",
         "gmaps-mcp"
       ]
     }
@@ -86,7 +86,7 @@ In Cursor, open **Settings → Features → MCP** (or edit `.cursor/mcp.json` in
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/<your-username>/gmaps-mcp.git",
+        "git+https://github.com/devsanthoshmk/gmaps-mcp.git",
         "gmaps-mcp"
       ]
     }
@@ -107,7 +107,7 @@ In Cline Settings (`cline_mcp_settings.json`):
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/<your-username>/gmaps-mcp.git",
+        "git+https://github.com/devsanthoshmk/gmaps-mcp.git",
         "gmaps-mcp"
       ]
     }
