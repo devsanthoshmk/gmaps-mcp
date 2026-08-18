@@ -139,3 +139,176 @@ async def test_get_place_details_async_place_id(monkeypatch):
     res2 = await get_place_details_async("place_id:ChIJRTQj_11nUjoRzYQ6wX2sUvY")
     assert res2 is not None
     assert res2.name == "Marina Beach"
+
+
+def test_extract_search_term():
+    from gmaps_mcp.scraper.crawler import _extract_search_term
+
+    term, loc = _extract_search_term("gift shop in chennai")
+    assert term == "gift shop"
+    assert loc == "chennai"
+
+    term, loc = _extract_search_term("dentists in chicago")
+    assert term == "dentists"
+    assert loc == "chicago"
+
+    term, loc = _extract_search_term("coffee near eiffel tower")
+    assert term == "coffee"
+    assert loc == "eiffel tower"
+
+    term, loc = _extract_search_term("pharmacies at t nagar")
+    assert term == "pharmacies"
+    assert loc == "t nagar"
+
+    term, loc = _extract_search_term("supermarket")
+    assert term == "supermarket"
+    assert loc is None
+
+
+def test_generate_geo_grid():
+    from gmaps_mcp.scraper.crawler import _generate_geo_grid
+    import math
+
+    center_lat = 13.0827
+    center_lng = 80.2707
+    span = 40000.0
+    grid_size = 4
+
+    grid = _generate_geo_grid(center_lat, center_lng, span, grid_size=grid_size)
+    assert len(grid) == 16
+    for lat, lng, cell_span in grid:
+        assert isinstance(lat, float)
+        assert isinstance(lng, float)
+        assert cell_span == 10000.0
+
+    # Verify gapless symmetric coverage
+    lat_deg_span = span / 111000.0
+    lng_deg_span = span / (111000.0 * math.cos(math.radians(center_lat)))
+    cell_lat_deg = lat_deg_span / grid_size
+    cell_lng_deg = lng_deg_span / grid_size
+
+    lats = sorted(list(set(round(g[0], 6) for g in grid)))
+    lngs = sorted(list(set(round(g[1], 6) for g in grid)))
+    assert len(lats) == 4
+    assert len(lngs) == 4
+
+    # Distance between adjacent tile centers should exactly equal cell degree span
+    for i in range(len(lats) - 1):
+        assert math.isclose(lats[i + 1] - lats[i], cell_lat_deg, rel_tol=1e-5)
+    for i in range(len(lngs) - 1):
+        assert math.isclose(lngs[i + 1] - lngs[i], cell_lng_deg, rel_tol=1e-5)
+
+    # Edge bounds: min_lat - cell/2 to max_lat + cell/2 should equal full lat_deg_span
+    min_lat_bound = lats[0] - cell_lat_deg / 2.0
+    max_lat_bound = lats[-1] + cell_lat_deg / 2.0
+    assert math.isclose(max_lat_bound - min_lat_bound, lat_deg_span, rel_tol=1e-5)
+
+
+def test_coverage_first_grid_size_calculation():
+    import math
+
+    target_tile_meters = 5000.0
+    max_grid_size = 10
+
+    test_cases = [
+        (3000.0, 1),    # 3 km  -> ceil(3/5) = 1 (no expansion)
+        (5000.0, 1),    # 5 km  -> ceil(5/5) = 1 (no expansion)
+        (6000.0, 2),    # 6 km  -> ceil(6/5) = 2 (2x2 = 4 tiles)
+        (10000.0, 2),   # 10 km -> ceil(10/5) = 2 (2x2 = 4 tiles)
+        (20000.0, 4),   # 20 km -> ceil(20/5) = 4 (4x4 = 16 tiles)
+        (40000.0, 8),   # 40 km -> ceil(40/5) = 8 (8x8 = 64 tiles)
+        (80000.0, 10),  # 80 km -> ceil(80/5) = 16 -> clamped to 10 (10x10 = 100 tiles)
+    ]
+
+    for span_m, expected_grid_size in test_cases:
+        calculated = min(math.ceil(span_m / target_tile_meters), max_grid_size)
+        assert calculated == expected_grid_size
+
+
+def test_build_viewport_tile_url():
+    from gmaps_mcp.scraper.crawler import _build_viewport_tile_url
+    from urllib.parse import unquote
+
+    base_url = "https://www.google.com/search?tbm=map&q=gift+shop+in+chennai&pb=%211sgift+shop+in+chennai%217i20%2110b1"
+    base_pb = "!1sgift+shop+in+chennai!7i20!10b1"
+
+    tile_url = _build_viewport_tile_url(
+        base_search_url=base_url,
+        base_decoded_pb=base_pb,
+        term="gift shop",
+        lat=13.085,
+        lng=80.210,
+        span_meters=15000.0,
+        start=20,
+        page_idx=2,
+    )
+
+    assert "q=gift%20shop" in tile_url or "q=gift+shop" in tile_url
+    assert "start=20" in tile_url
+    assert "ech=2" in tile_url
+    assert "!3d13.085" in unquote(tile_url)
+    assert "!2d80.21" in unquote(tile_url)
+
+
+@pytest.mark.asyncio
+async def test_search_google_maps_async_adaptive_grid_small_area(monkeypatch):
+    from gmaps_mcp.scraper.crawler import search_google_maps_async, Place
+
+    # Mock _get_search_url to return a valid search URL and bounds (span = 4000m <= 5000m target)
+    async def mock_get_search_url(session, query, lang, country, timeout=20):
+        return "https://www.google.com/search?tbm=map&pb=!1stest", [], (13.0827, 80.2707, 4000.0)
+
+    fetched_urls = []
+
+    async def mock_fetch_results_page(session, search_url, query, start=0, country="in", timeout=20):
+        fetched_urls.append(search_url)
+        # return 1 place on initial page, then None
+        if start == 0:
+            return [
+                Place(place_id="p1", name="Place 1", category="Shop", address="Address 1")
+            ], (13.0827, 80.2707, 4000.0)
+        return [], None
+
+    monkeypatch.setattr("gmaps_mcp.scraper.crawler._get_search_url", mock_get_search_url)
+    monkeypatch.setattr("gmaps_mcp.scraper.crawler._fetch_results_page", mock_fetch_results_page)
+
+    places = await search_google_maps_async("gift shop in small area", grid=True, target_tile_meters=5000.0)
+    assert len(places) == 1
+    # For a 4km area with 5km target tile, grid_size = ceil(4/5) = 1 <= 1, so no sub-viewport tile searches should be triggered
+    # Only pagination on base url
+    assert not any("!4m8" in u for u in fetched_urls)
+
+
+@pytest.mark.asyncio
+async def test_search_google_maps_async_adaptive_grid_large_area(monkeypatch):
+    from urllib.parse import unquote
+    from gmaps_mcp.scraper.crawler import search_google_maps_async, Place
+
+    # Mock _get_search_url with span = 10000m (> 5000m target -> 2x2 = 4 tiles)
+    async def mock_get_search_url(session, query, lang, country, timeout=20):
+        return "https://www.google.com/search?tbm=map&pb=!1stest", [], (13.0827, 80.2707, 10000.0)
+
+    fetched_urls = []
+
+    async def mock_fetch_results_page(session, search_url, query, start=0, country="in", timeout=20):
+        fetched_urls.append(search_url)
+        if "!4m8" in unquote(search_url):
+            # Sub-viewport tile
+            tile_id = f"place_from_tile_{len(fetched_urls)}"
+            return [Place(place_id=tile_id, name=f"Name {tile_id}", category="Shop", address="Addr")], None
+        if start == 0:
+            return [Place(place_id="p_initial", name="Initial Place", category="Shop", address="Addr")], (13.0827, 80.2707, 10000.0)
+        return [], None
+
+    monkeypatch.setattr("gmaps_mcp.scraper.crawler._get_search_url", mock_get_search_url)
+    monkeypatch.setattr("gmaps_mcp.scraper.crawler._fetch_results_page", mock_fetch_results_page)
+
+    places = await search_google_maps_async("gift shop in big city", grid=True, target_tile_meters=5000.0)
+    # ceil(10000 / 5000) = 2 -> 2x2 = 4 tiles
+    tile_urls = [u for u in fetched_urls if "!4m8" in unquote(u)]
+    assert len(tile_urls) == 4
+    # Check that places from initial search and all 4 tiles were collected
+    assert len(places) == 5
+
+
+

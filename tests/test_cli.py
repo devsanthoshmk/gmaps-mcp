@@ -87,3 +87,64 @@ async def test_cli_details_command_output(capsys):
         captured = capsys.readouterr()
         assert "Eiffel Tower" in captured.out
         assert "Tourist attraction" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_cli_details_command_json_and_csv(capsys, tmp_path):
+    parser = build_parser()
+    sample_det = GetPlaceDetailsResult(
+        place=Place(
+            place_id="ChIJ_DETAILS_1",
+            name="Eiffel Tower",
+            category="Tourist attraction",
+            address="Champ de Mars, Paris",
+            phone="01 23 45 67 89",
+            rating=4.7,
+            review_count=350000,
+        ),
+        found=True,
+        query_or_id="Eiffel Tower",
+    )
+
+    with patch("gmaps_mcp.cli.get_place_details", new=AsyncMock(return_value=sample_det)):
+        # Test JSON format
+        args_json = parser.parse_args(["details", "Eiffel Tower", "--format", "json"])
+        await async_main(args_json)
+        out_json = capsys.readouterr().out
+        assert '"name": "Eiffel Tower"' in out_json
+
+        # Test CSV format
+        args_csv = parser.parse_args(["details", "Eiffel Tower", "--format", "csv"])
+        await async_main(args_csv)
+        out_csv = capsys.readouterr().out
+        assert "place_id,name,category" in out_csv
+        assert "Eiffel Tower" in out_csv
+
+        # Test export to CSV file
+        csv_file = str(tmp_path / "details.csv")
+        args_out = parser.parse_args(["details", "Eiffel Tower", "--output", csv_file])
+        await async_main(args_out)
+        assert (tmp_path / "details.csv").exists()
+
+        # Test export to JSON file
+        json_file = str(tmp_path / "details.json")
+        args_json_out = parser.parse_args(["details", "Eiffel Tower", "--output", json_file])
+        await async_main(args_json_out)
+        assert (tmp_path / "details.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_cli_details_not_found(capsys):
+    parser = build_parser()
+    sample_not_found = GetPlaceDetailsResult(
+        place=None,
+        found=False,
+        query_or_id="NonExistentPlace12345",
+    )
+
+    with patch("gmaps_mcp.cli.get_place_details", new=AsyncMock(return_value=sample_not_found)):
+        args = parser.parse_args(["details", "NonExistentPlace12345"])
+        await async_main(args)
+        captured = capsys.readouterr()
+        assert "Place not found" in captured.out
+
